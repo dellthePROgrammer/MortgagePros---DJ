@@ -1,12 +1,11 @@
 import { Request, Response } from 'express';
 import { queueService } from '../services/queue.service';
-import { spotifyService } from '../services/spotify.service';
 import { sessionService } from '../services/session.service';
 import { playbackService } from '../services/playback.service';
 import { broadcastQueueUpdate } from '../sockets/handlers';
 import { Server as SocketIOServer } from 'socket.io';
 import { creditService, CreditError, CreditState, GUEST_TRACK_COST, VOTE_REACTION_COST } from '../services/credit.service';
-import { playbackTargetService } from '../services/playbackTarget.service';
+import { config } from '../config';
 
 export class QueueController {
   private resolveSessionActor = async (req: Request, sessionId: string) => {
@@ -45,10 +44,13 @@ export class QueueController {
       ? { userId: session.hostId }
       : { guestId: guestId! };
 
+    const soundZoneId = session.soundtrackZoneId || config.soundtrack.defaultSoundZone;
+
     return {
       session,
       actor,
       role: isHost ? 'host' as const : 'guest' as const,
+      soundZoneId: soundZoneId ?? null,
     } as const;
   };
 
@@ -66,10 +68,32 @@ export class QueueController {
   add = async (req: Request, res: Response) => {
     try {
       const { sessionId } = req.params;
-      const { spotifyTrackId } = req.body;
+      const { content } = req.body ?? {};
 
-      if (!spotifyTrackId) {
-        return res.status(400).json({ error: 'Track ID is required' });
+      if (!content || typeof content !== 'object') {
+        return res.status(400).json({ error: 'Track content is required' });
+      }
+
+      const {
+        id: trackId,
+        name,
+        artists,
+        album,
+        imageUrl,
+        durationMs,
+        explicit,
+      } = content as {
+        id?: string;
+        name?: string;
+        artists?: string[];
+        album?: string | null;
+        imageUrl?: string | null;
+        durationMs?: number | null;
+        explicit?: boolean;
+      };
+
+      if (!trackId || !name) {
+        return res.status(400).json({ error: 'Track id and name are required' });
       }
 
       if ((req as any)._spentCreditsForQueue) {
@@ -83,19 +107,14 @@ export class QueueController {
           .json({ error: context.error });
       }
 
-      const { session, actor, role } = context;
-      const allowExplicit = (session as any).allowExplicit ?? true;
-      const queuedBefore = await queueService.countActiveQueueItems(sessionId);
+      const { session, actor, role, soundZoneId } = context;
+  const allowExplicit = (session as any).allowExplicit ?? true;
       const clerkUserId = req.auth?.userId ?? null;
       let guestCreditState: CreditState | null = null;
 
-      playbackService.ensureMonitor(sessionId, session.hostId);
+      playbackService.ensureMonitor(sessionId, session.hostId, soundZoneId);
 
-      // Guests use the host's Spotify credentials
-      const accessToken = await spotifyService.ensureValidToken(session.hostId);
-      const track = await spotifyService.getTrack(spotifyTrackId, accessToken);
-
-      if (!allowExplicit && track.explicit) {
+      if (!allowExplicit && explicit) {
         return res.status(400).json({ error: 'Explicit tracks are disabled for this session' });
       }
 
@@ -121,27 +140,16 @@ export class QueueController {
       // Add to queue
       const queueItem = await queueService.addToQueue(
         sessionId,
-        track.id,
-        track.name,
-        track.artists.map((a: any) => a.name).join(', '),
-        track.album.name,
-        track.album.images[0]?.url || null,
-        track.duration_ms,
+        trackId,
+        name,
+        (artists ?? []).join(', '),
+        album ?? null,
+        imageUrl ?? null,
+        typeof durationMs === 'number' ? durationMs : 0,
         actor
       );
 
       const state = await this.emitQueueState(req, sessionId);
-
-      // Push to playback device queue only if this is the first upcoming track
-      if (queuedBefore === 0 && state.nextUp && state.nextUp.id === queueItem.id) {
-        const trackUri = track.uri || `spotify:track:${track.id}`;
-        try {
-          await playbackTargetService.queueTrack(session.hostId, accessToken, trackUri, { autoTransfer: true });
-          playbackService.recordManualQueue(sessionId, queueItem.id);
-        } catch (queueError) {
-          console.warn('Failed to add track to Spotify playback queue:', queueError);
-        }
-      }
 
       playbackService.requestImmediateSync(sessionId);
 
@@ -189,7 +197,8 @@ export class QueueController {
       const { sessionId } = req.params;
       const session = await sessionService.getSession(sessionId);
       if (session?.isActive) {
-        playbackService.ensureMonitor(sessionId, session.hostId);
+        const zoneId = session.soundtrackZoneId || config.soundtrack.defaultSoundZone;
+        playbackService.ensureMonitor(sessionId, session.hostId, zoneId ?? null);
       }
       const state = await queueService.getQueueWithNext(sessionId);
       res.json(state);
@@ -244,7 +253,8 @@ export class QueueController {
       }
 
       if (queueItem.session.isActive) {
-        playbackService.ensureMonitor(queueItem.sessionId, queueItem.session.hostId);
+        const zoneId = queueItem.session.soundtrackZoneId || config.soundtrack.defaultSoundZone;
+        playbackService.ensureMonitor(queueItem.sessionId, queueItem.session.hostId, zoneId ?? null);
       }
       const state = await this.emitQueueState(req, queueItem.sessionId);
       playbackService.requestImmediateSync(queueItem.sessionId);

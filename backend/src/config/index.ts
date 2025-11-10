@@ -2,6 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
 
+declare const process: any;
+declare const __dirname: string;
+
 const candidatePaths = [
   path.resolve(process.cwd(), '.env'),
   path.resolve(process.cwd(), '../.env'),
@@ -100,6 +103,14 @@ export const config = {
     clientSecret: process.env.SPOTIFY_CLIENT_SECRET!,
     redirectUri: process.env.SPOTIFY_REDIRECT_URI!,
   },
+  soundtrack: {
+    apiEndpoint: process.env.SOUNDTRACK_API_ENDPOINT?.trim() || 'https://api.soundtrackyourbrand.com/v2',
+    wsEndpoint: process.env.SOUNDTRACK_WS_ENDPOINT?.trim() || 'wss://api.soundtrackyourbrand.com/v2/graphql-transport-ws',
+    apiToken: process.env.SOUNDTRACK_API_TOKEN!,
+    defaultSoundZone: process.env.SOUNDTRACK_DEFAULT_SOUND_ZONE?.trim() || null,
+    defaultContentId: process.env.SOUNDTRACK_DEFAULT_CONTENT_ID?.trim() || null,
+    defaultMarket: process.env.SOUNDTRACK_DEFAULT_MARKET?.trim() || 'US',
+  },
   librespot: {
     enabled: parseBoolean(process.env.LIBRESPOT_ENABLED, false),
     deviceName: process.env.LIBRESPOT_DEVICE_NAME?.trim() || 'MortgagePros DJ',
@@ -134,6 +145,7 @@ const requiredEnvVars = [
   'SPOTIFY_CLIENT_ID',
   'SPOTIFY_CLIENT_SECRET',
   'SPOTIFY_REDIRECT_URI',
+  'SOUNDTRACK_API_TOKEN',
   'SESSION_SECRET',
   'CLERK_PUBLISHABLE_KEY',
   'CLERK_SECRET_KEY',
