@@ -17,6 +17,7 @@ interface MonitorState {
 const DEFAULT_POLL_INTERVAL_MS = 5000;
 const MIN_POLL_INTERVAL_MS = 2000;
 const CONTENT_REQUEST_TIMEOUT_MS = 15000;
+export const PLAYBACK_SKIP_POLL_DELAY_MS = 2000;
 
 const enum SoundtrackPlaybackState {
   Playing = 'PLAYING',
@@ -154,12 +155,12 @@ class PlaybackService {
     this.io = io;
   }
 
-  ensureMonitor(sessionId: string, hostId: string, soundZoneId: string | null) {
+  ensureMonitor(sessionId: string, hostId: string, soundZoneId?: string | null) {
     const existing = this.monitors.get(sessionId);
 
     if (existing) {
       existing.hostId = hostId;
-      existing.soundZoneId = soundZoneId ?? existing.soundZoneId ?? null;
+      existing.soundZoneId = (soundZoneId ?? existing.soundZoneId) ?? null;
       if (!existing.timeout && !existing.processing) {
         this.schedulePoll(sessionId, 0);
       }
@@ -168,7 +169,7 @@ class PlaybackService {
 
     this.monitors.set(sessionId, {
       hostId,
-      soundZoneId: soundZoneId ?? config.soundtrack.defaultSoundZone ?? null,
+      soundZoneId: (soundZoneId ?? config.soundtrack.defaultSoundZone) ?? null,
       timeout: null,
       processing: false,
       currentTrackId: null,

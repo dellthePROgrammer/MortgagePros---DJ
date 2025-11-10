@@ -107,8 +107,8 @@ export class QueueController {
           .json({ error: context.error });
       }
 
-      const { session, actor, role, soundZoneId } = context;
-  const allowExplicit = (session as any).allowExplicit ?? true;
+    const { session, actor, role, soundZoneId } = context;
+    const allowExplicit = session.allowExplicit ?? true;
       const clerkUserId = req.auth?.userId ?? null;
       let guestCreditState: CreditState | null = null;
 
